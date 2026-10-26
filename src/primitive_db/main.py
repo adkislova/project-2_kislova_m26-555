@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import primitive_db.engine
+
 
 def main():
-    print("DB project is running!")
+    primitive_db.engine.engine()
