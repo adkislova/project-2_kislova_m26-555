@@ -1,0 +1,1 @@
+{"books": {"name": "str", "data": "str", "author": "str", "flag_read": "bool", "ID": "int"}, "authors": {"ID": "int", "name": "str", "cnt_books": "int"}, "products": {"name": "str", "price": "int", "ID": "int"}, "test": {"a": "int", "ID": "int"}}
