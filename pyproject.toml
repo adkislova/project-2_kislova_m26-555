@@ -1,15 +1,14 @@
 [project]
 name = "primitive-db"
 version = "0.1.0"
-description = "CLI for metadata management"
+description = "Учебная CLI-база данных: управление таблицами, CRUD-операции, декораторы"
 readme = "README.md"
 authors = [
     { name = "nastayirshenko", email = "nastayirshenko@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "asciinema>=2.4.0",
-    "black>=26.10.1",
+    "poetry>=2.5.1",
     "prettytable>=3.18.0",
     "prompt>=0.4.1",
 ]
@@ -24,7 +23,7 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-exclude = ["venv", ".venv", "dist", "__pycache__"]
+exclude = ["venv", ".venv", "dist", "__pycache__", "data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

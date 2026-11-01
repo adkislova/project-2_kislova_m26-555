@@ -1,3 +1,4 @@
+from primitive_db.constants import VALID_TYPES
 from primitive_db.decorators import confirm_action, handle_db_errors, log_time
 from primitive_db.utils import load_table_data, save_table_data
 
@@ -20,7 +21,7 @@ def create_table(metadata, table_name, columns):
         key, value = map(str.strip, col.split(":"))
         if not key or not value:
             raise ValueError(f"в столбце '{col}' нет названия или типа")
-        if value not in ("int", "str", "bool"):
+        if value not in VALID_TYPES:
             raise ValueError(f"тип '{value}' не поддерживается (int, str, bool)")
 
         cols[key] = value
