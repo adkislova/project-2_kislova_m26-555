@@ -1,0 +1,22 @@
+# Виртуальные окружения и сборки
+.venv/
+dist/
+*.egg-info/
+
+# Кэши
+__pycache__/
+*.pyc
+.ruff_cache/
+
+# Файлы базы данных (создаются при работе программы)
+db_meta.json
+data/
+
+# Служебные файлы
+.vscode/
+.idea/
+
+# Скриншоты, не используемые в README
+image.png
+image-1.png
+image-2.png

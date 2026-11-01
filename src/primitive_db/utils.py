@@ -1,6 +1,8 @@
 import json
 import os
 
+from primitive_db.constants import DATA_DIR
+
 
 def load_metadata(filepath):
     """Loads metadata from a JSON file"""
@@ -45,7 +47,7 @@ def load_table_data(table_name):
     """Loads table data; a missing data file is treated as an empty table."""
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(base_dir, "data", f"{table_name}.json")
+    filepath = os.path.join(base_dir, DATA_DIR, f"{table_name}.json")
     filepath = os.path.abspath(filepath)
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -68,7 +70,7 @@ def save_table_data(table_name, data):
     """Saves table data to a JSON file"""
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(base_dir, "data", f"{table_name}.json")
+    filepath = os.path.join(base_dir, DATA_DIR, f"{table_name}.json")
     filepath = os.path.abspath(filepath)
 
     os.makedirs(os.path.dirname(filepath), exist_ok=True)

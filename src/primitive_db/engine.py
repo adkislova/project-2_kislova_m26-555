@@ -4,6 +4,7 @@ from pathlib import Path
 
 from prettytable import PrettyTable
 
+from primitive_db.constants import META_FILE
 from primitive_db.core import (
     convert_value,
     create_table,
@@ -24,7 +25,7 @@ from primitive_db.utils import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "db_meta.json"
+DB_PATH = BASE_DIR / META_FILE
 
 SELECT_CACHE = create_cacher()
 
