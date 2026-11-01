@@ -14,6 +14,7 @@ from primitive_db.core import (
     select,
     update,
 )
+from primitive_db.decorators import create_cacher
 from primitive_db.parser import parse_set_clause, parse_where_clause
 from primitive_db.utils import (
     load_metadata,
@@ -24,6 +25,8 @@ from primitive_db.utils import (
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "db_meta.json"
+
+SELECT_CACHE = create_cacher()
 
 NO_MATCHES_MESSAGE = "Записи, удовлетворяющие условию, не найдены."
 
@@ -81,14 +84,38 @@ def _print_select_result(headers, data):
 
 
 def _convert_set_values(schema, set_clause):
-    """Converts SET values to their column types, prints errors and returns None."""
+    """Validates SET columns and converts values, prints errors and returns None."""
+
+    invalid_columns = [
+        field for field in set_clause if field == "ID" or field not in schema
+    ]
+    if invalid_columns:
+        print(f"Некорректные столбцы для update: {', '.join(invalid_columns)}.")
+        return None
 
     converted_set = {}
-    for field, raw_value in set_clause.items():
-        converted_set[field] = convert_value(schema[field], raw_value, column=field)
-        if converted_set[field] is None:
+    for field, raw in set_clause.items():
+        try:
+            converted_set[field] = convert_value(schema[field], raw, column=field)
+        except ValueError as error:
+            print(f"Ошибка валидации: {error}")
             return None
     return converted_set
+
+
+def _parse_update_clauses(rest):
+    """Parses the SET and WHERE parts of an update command, None on error."""
+
+    if "where" not in rest:
+        print("Ошибка: после set должно быть условие where.")
+        return None
+
+    idx = rest.index("where")
+    set_clause = parse_set_clause(" ".join(rest[:idx]))
+    where_clause = parse_where_clause(" ".join(rest[idx + 1:]))
+    if set_clause is None or where_clause is None:
+        return None
+    return set_clause, where_clause
 
 
 def run():
@@ -117,11 +144,14 @@ def run():
                     print("Укажите хотя бы один столбец.")
                     continue
                 metadata = create_table(data, table_name, columns)
-                save_metadata(DB_PATH, metadata)
+                if metadata is not None:
+                    save_metadata(DB_PATH, metadata)
 
             case ["drop_table", table_name]:
                 metadata = drop_table(data, table_name)
-                save_metadata(DB_PATH, metadata)
+                if metadata is not None:
+                    save_metadata(DB_PATH, metadata)
+                    SELECT_CACHE.cache.clear()
 
             case ["list_tables"]:
                 list_tables(data)
@@ -138,53 +168,40 @@ def run():
                 new_data = insert(data, table_name, _parse_values(payload.group(2)))
                 if new_data is not None:
                     save_table_data(table_name, new_data)
+                    SELECT_CACHE.cache.clear()
 
             case ["select", "from", table_name]:
                 table_data = _load_table(data, table_name)
                 if table_data is None:
                     continue
-                _print_select_result(list(data[table_name]), select(table_data))
+                records = SELECT_CACHE(
+                    f"select|{table_name}|all", lambda: select(table_data)
+                )
+                _print_select_result(list(data[table_name]), records)
 
             case ["select", "from", table_name, "where", *where_parts]:
-                if not where_parts:
-                    print(
-                        "Укажите условие: select from <таблица>"
-                        " where <столбец> = <значение>"
-                    )
-                    continue
                 table_data = _load_table(data, table_name)
                 if table_data is None:
                     continue
                 where_clause = parse_where_clause(" ".join(where_parts))
                 if where_clause is None:
                     continue
-                _print_select_result(
-                    list(data[table_name]), select(table_data, where_clause)
+                condition = " ".join(where_parts)
+                records = SELECT_CACHE(
+                    f"select|{table_name}|{condition}",
+                    lambda: select(table_data, where_clause),
                 )
+                _print_select_result(list(data[table_name]), records)
 
             case ["update", table_name, "set", *rest]:
                 table_data = _load_table(data, table_name)
                 if table_data is None:
                     continue
-                if "where" not in rest:
-                    print("Ошибка: после set должно быть условие where.")
-                    continue
 
-                idx = rest.index("where")
-                set_clause = parse_set_clause(" ".join(rest[:idx]))
-                where_clause = parse_where_clause(" ".join(rest[idx + 1:]))
-                if set_clause is None or where_clause is None:
+                clauses = _parse_update_clauses(rest)
+                if clauses is None:
                     continue
-
-                invalid_columns = [
-                    field
-                    for field in set_clause
-                    if field == "ID" or field not in data[table_name]
-                ]
-                if invalid_columns:
-                    bad_columns = ", ".join(invalid_columns)
-                    print(f"Некорректные столбцы для update: {bad_columns}.")
-                    continue
+                set_clause, where_clause = clauses
 
                 converted_set = _convert_set_values(data[table_name], set_clause)
                 if converted_set is None:
@@ -192,6 +209,8 @@ def run():
 
                 matched_data = select(table_data, where_clause)
                 updated_data = update(table_data, converted_set, where_clause)
+                if updated_data is None:
+                    continue
                 changed_ids = [
                     record_id
                     for record_id, record in updated_data.items()
@@ -209,6 +228,7 @@ def run():
                     continue
 
                 save_table_data(table_name, updated_data)
+                SELECT_CACHE.cache.clear()
                 for record_id in changed_ids:
                     print(
                         f'Запись с ID={record_id} в таблице "{table_name}"'
@@ -216,12 +236,6 @@ def run():
                     )
 
             case ["delete", "from", table_name, "where", *where_parts]:
-                if not where_parts:
-                    print(
-                        "Укажите условие: delete from <таблица>"
-                        " where <столбец> = <значение>"
-                    )
-                    continue
                 table_data = _load_table(data, table_name)
                 if table_data is None:
                     continue
@@ -229,6 +243,8 @@ def run():
                 if where_clause is None:
                     continue
                 remaining_data = delete(table_data, where_clause)
+                if remaining_data is None:
+                    continue
                 deleted_ids = [
                     record_id
                     for record_id in table_data
@@ -239,6 +255,7 @@ def run():
                     continue
 
                 save_table_data(table_name, remaining_data)
+                SELECT_CACHE.cache.clear()
                 for record_id in deleted_ids:
                     print(
                         f'Запись с ID={record_id} успешно удалена'

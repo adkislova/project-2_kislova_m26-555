@@ -1,37 +1,27 @@
+from primitive_db.decorators import confirm_action, handle_db_errors, log_time
 from primitive_db.utils import load_table_data, save_table_data
 
 
+@handle_db_errors
 def create_table(metadata, table_name, columns):
     """Creates a new table"""
 
     if not table_name.isidentifier():
-        print(f"Некорректное имя таблицы: '{table_name}'. Попробуйте снова.")
-        return metadata
+        raise ValueError(f"некорректное имя таблицы: '{table_name}'")
 
     if table_name in metadata:
-        print(f"Таблица {table_name} уже существует.")
-        return metadata
+        raise ValueError(f"таблица {table_name} уже существует")
 
     cols = {}
     for col in columns:
-        if ":" not in col:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
+        if ":" not in col or len(col.split(":")) != 2:
+            raise ValueError(f"некорректное определение столбца: '{col}'")
 
-        key_value = col.split(":")
-
-        if len(key_value) != 2:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
-
-        key, value = map(str.strip, key_value)
-
+        key, value = map(str.strip, col.split(":"))
         if not key or not value:
-            print("Отсутствует название колонки или тип данных. Попробуйте еще раз.")
-            return metadata
-        elif value not in ["int", "str", "bool"]:
-            print(f"Некорректный тип данных: {value}. Доступны: int, str, bool.")
-            return metadata
+            raise ValueError(f"в столбце '{col}' нет названия или типа")
+        if value not in ("int", "str", "bool"):
+            raise ValueError(f"тип '{value}' не поддерживается (int, str, bool)")
 
         cols[key] = value
 
@@ -48,18 +38,21 @@ def create_table(metadata, table_name, columns):
     return metadata
 
 
+@handle_db_errors
+@confirm_action("удаление таблицы")
 def drop_table(metadata, table_name):
     """Drops an existing table"""
 
-    if table_name in metadata:
-        del metadata[table_name]
-        print(f"Таблица {table_name} успешно удалена.")
-    else:
-        print(f"Таблица {table_name} не существует.")
+    if table_name not in metadata:
+        raise KeyError(table_name)
+
+    del metadata[table_name]
+    print(f"Таблица {table_name} успешно удалена.")
 
     return metadata
 
 
+@handle_db_errors
 def list_tables(metadata):
     """Print the list of existing tables"""
 
@@ -77,19 +70,20 @@ def _strip_quotes(value):
 
 
 def convert_value(expected_type, value, column=None):
-    """Converts a value to the column type, prints an error and returns None."""
+    """Converts a value to the column type, raises ValueError on mismatch."""
 
-    error_prefix = "Ошибка: некорректное значение"
+    error_prefix = "некорректное значение"
     column_part = f" для столбца '{column}'" if column else ""
 
     if not isinstance(value, str):
         is_plain_int = isinstance(value, int) and not isinstance(value, bool)
         if expected_type == "int" and is_plain_int:
             return value
-        if expected_type == "bool" and isinstance(value, bool):
-            return value
-        print(f"{error_prefix} {value!r}{column_part} (ожидается {expected_type}).")
-        return None
+        if expected_type == "bool" and isinstance(value, int):
+            return bool(value)
+        raise ValueError(
+            f"{error_prefix} {value!r}{column_part} (ожидается {expected_type})"
+        )
 
     value = _strip_quotes(value)
 
@@ -97,16 +91,18 @@ def convert_value(expected_type, value, column=None):
         try:
             return int(value)
         except ValueError:
-            print(f"{error_prefix} '{value}'{column_part} (ожидается int).")
-            return None
+            raise ValueError(
+                f"{error_prefix} '{value}'{column_part} (ожидается int)"
+            ) from None
     if expected_type == "bool":
         lowered = value.lower()
         if lowered in ("true", "1"):
             return True
         if lowered in ("false", "0"):
             return False
-        print(f"{error_prefix} '{value}'{column_part} (ожидается true/false).")
-        return None
+        raise ValueError(
+            f"{error_prefix} '{value}'{column_part} (ожидается true/false)"
+        )
     return value
 
 
@@ -133,30 +129,28 @@ def _matches(record_id, record, where_clause):
     return True
 
 
+@handle_db_errors
+@log_time
 def insert(metadata, table_name, values):
     """Creates a new record in the table, returns the table data (None on error)"""
 
     if table_name not in metadata:
-        print(f"Таблица '{table_name}' не существует.")
-        return None
+        raise KeyError(table_name)
 
     table_schema = metadata[table_name]
     data_cols = [col for col in table_schema if col != "ID"]
 
     if len(values) != len(data_cols):
         expected = ", ".join(data_cols)
-        print(
-            f"Некорректное количество значений: получено {len(values)}, "
-            f"ожидалось {len(data_cols)} (столбцы: {expected}). Все поля обязательны."
+        raise ValueError(
+            f"получено {len(values)} значений, ожидалось {len(data_cols)} "
+            f"(столбцы: {expected}); все поля обязательны"
         )
-        return None
 
-    new_record = {}
-    for col, raw_value in zip(data_cols, values):
-        converted = convert_value(table_schema[col], raw_value, column=col)
-        if converted is None:
-            return None
-        new_record[col] = converted
+    new_record = {
+        col: convert_value(table_schema[col], raw_value, column=col)
+        for col, raw_value in zip(data_cols, values)
+    }
 
     table_data = load_table_data(table_name)
 
@@ -174,6 +168,8 @@ def insert(metadata, table_name, values):
     return table_data
 
 
+@handle_db_errors
+@log_time
 def select(table_data, where_clause=None):
     """Returns all records or only those matching the WHERE clause"""
 
@@ -187,6 +183,7 @@ def select(table_data, where_clause=None):
     }
 
 
+@handle_db_errors
 def update(table_data, set_clause, where_clause):
     """Updates records matching the WHERE clause, returns the table data"""
 
@@ -200,6 +197,8 @@ def update(table_data, set_clause, where_clause):
     return update_data
 
 
+@handle_db_errors
+@confirm_action("удаление записей")
 def delete(table_data, where_clause):
     """Deletes records matching the WHERE clause, returns the remaining data"""
 

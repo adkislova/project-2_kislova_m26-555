@@ -1,1 +1,0 @@
-{"books": {"ID": "int", "name": "str", "year": "str", "author": "str", "price": "int", "is_russian": "bool"}, "shops": {"ID": "int", "name": "str"}}
